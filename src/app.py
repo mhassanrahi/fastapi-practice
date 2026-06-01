@@ -9,6 +9,7 @@ from sqlalchemy import select
 from .db import create_db_and_tables, get_async_session, Post
 from .images import imagekit
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_db_and_tables()
@@ -20,7 +21,7 @@ app = FastAPI(lifespan=lifespan)
 @app.post("/upload")
 async def upload_file(
         file: UploadFile = File(...),
-        caption: str = Form(""),
+        caption: str = Form(...),
         session: AsyncSession = Depends(get_async_session)
 ):
     MAX_IMAGE_SIZE = 2 * 1024 * 1024   # 2 MB
@@ -34,7 +35,8 @@ async def upload_file(
         file_type = "video"
         max_size = MAX_VIDEO_SIZE
     else:
-        raise HTTPException(status_code=400, detail="Only image and video files are supported")
+        raise HTTPException(
+            status_code=400, detail="Only image and video files are supported")
 
     # Read one byte beyond the limit so we can detect oversized files
     # without loading the entire file into memory first.
@@ -61,7 +63,8 @@ async def upload_file(
             )
         )
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"ImageKit upload failed: {e}")
+        raise HTTPException(
+            status_code=502, detail=f"ImageKit upload failed: {e}")
 
     post = Post(
         caption=caption,
@@ -83,10 +86,11 @@ async def upload_file(
         "created_at": post.created_at.isoformat(),
     }
 
+
 @app.get("/feed")
 async def get_feed(
         session: AsyncSession = Depends(get_async_session)
-) :
+):
     result = await session.execute(select(Post).order_by(Post.created_at.desc()))
     posts = [row[0] for row in result.all()]
 
@@ -102,3 +106,29 @@ async def get_feed(
         }
         posts_data.append(post_data)
     return posts_data
+
+
+@app.delete("/posts/{id}")
+async def delete_post(
+    id: str,
+    session: AsyncSession = Depends(get_async_session)
+):
+    result = await session.execute(
+        select(Post).where(Post.id == id)
+    )
+
+    post = result.scalar_one_or_none()
+
+    if post is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Post not found"
+        )
+
+    await session.delete(post)
+    await session.commit()
+
+    return {
+        "success": True,
+        "message": "Post deleted successfully."
+    }
