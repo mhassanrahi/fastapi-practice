@@ -5,8 +5,10 @@ import os
 
 load_dotenv()
 
-imagekit = ImageKit(
-    private_key=os.getenv("IMAGEKIT_PRIVATE_KEY"),
-)
+IMAGEKIT_PRIVATE_KEY = os.getenv("IMAGEKIT_PRIVATE_KEY")
+if not IMAGEKIT_PRIVATE_KEY:
+    raise RuntimeError("Missing required ImageKit environment variables")
 
-URL_ENDPOINT = os.getenv("IMAGEKIT_URL_ENDPOINT")
+imagekit = ImageKit(
+    private_key=IMAGEKIT_PRIVATE_KEY,
+)

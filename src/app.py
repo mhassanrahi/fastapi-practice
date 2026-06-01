@@ -50,7 +50,7 @@ async def upload_file(
     # generate unique file name to avoid conflicts
     file_name_unique = f"{uuid.uuid4()}_{file_name}"
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         upload_response = await loop.run_in_executor(
             None,
