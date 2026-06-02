@@ -2,12 +2,12 @@ from collections.abc import AsyncGenerator
 import os
 import uuid
 
-from sqlalchemy import UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
-from sqlalchemy import Column, String, DateTime, ForeignKey
+from sqlalchemy import Column, String, DateTime, ForeignKey, UUID
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from datetime import datetime, timezone
 from fastapi_users.db import SQLAlchemyUserDatabase, SQLAlchemyBaseUserTableUUID
+from fastapi_users_db_sqlalchemy.generics import GUID
 from fastapi import Depends
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
@@ -35,8 +35,7 @@ class Post(Base):
     file_type = Column(String(100), nullable=False)
     file_name = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    user_id = Column(UUID(as_uuid=True), ForeignKey(
-        "user.id"), nullable=False)
+    user_id = Column(GUID, ForeignKey("user.id"), nullable=False)
 
     user = relationship("User", back_populates="posts", lazy="selectin")
 
