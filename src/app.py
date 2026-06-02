@@ -9,6 +9,11 @@ from sqlalchemy import select
 from .db import create_db_and_tables, get_async_session, Post
 from .images import imagekit
 
+from .users import auth_backend, current_active_user, fastapi_users
+from .schemas import UserCreate, UserRead, UserUpdate
+
+
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -16,6 +21,12 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(lifespan=lifespan)
+
+app.include_router(fastapi_users.get_auth_router(auth_backend), prefix='/auth/jwt', tags=["auth"])
+app.include_router(fastapi_users.get_register_router(UserRead, UserCreate), prefix="/auth", tags=["auth"])
+app.include_router(fastapi_users.get_reset_password_router(), prefix="/auth", tags=["auth"])
+app.include_router(fastapi_users.get_verify_router(UserRead), prefix="/auth", tags=["auth"])
+app.include_router(fastapi_users.get_users_router(UserRead, UserUpdate), prefix="/users", tags=["users"])
 
 
 @app.post("/upload")
@@ -71,6 +82,7 @@ async def upload_file(
         url=upload_response.url,
         file_type=file_type,
         file_name=file_name_unique,
+        user_id= uuid.UUID("eae45e29-d1c3-4966-b752-b5756407715f")
     )
 
     session.add(post)
@@ -113,8 +125,9 @@ async def delete_post(
     id: str,
     session: AsyncSession = Depends(get_async_session)
 ):
+    post_id = uuid.UUID(id)
     result = await session.execute(
-        select(Post).where(Post.id == id)
+        select(Post).where(Post.id == post_id)
     )
 
     post = result.scalar_one_or_none()
