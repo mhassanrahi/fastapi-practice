@@ -5,14 +5,13 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
-from .db import create_db_and_tables, get_async_session, Post
+from .db import create_db_and_tables, get_async_session, Post, User
 from .images import imagekit
 
 from .users import auth_backend, current_active_user, fastapi_users
 from .schemas import UserCreate, UserRead, UserUpdate
-
-
 
 
 @asynccontextmanager
@@ -22,17 +21,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-app.include_router(fastapi_users.get_auth_router(auth_backend), prefix='/auth/jwt', tags=["auth"])
-app.include_router(fastapi_users.get_register_router(UserRead, UserCreate), prefix="/auth", tags=["auth"])
-app.include_router(fastapi_users.get_reset_password_router(), prefix="/auth", tags=["auth"])
-app.include_router(fastapi_users.get_verify_router(UserRead), prefix="/auth", tags=["auth"])
-app.include_router(fastapi_users.get_users_router(UserRead, UserUpdate), prefix="/users", tags=["users"])
+app.include_router(fastapi_users.get_auth_router(
+    auth_backend), prefix='/auth/jwt', tags=["auth"])
+app.include_router(fastapi_users.get_register_router(
+    UserRead, UserCreate), prefix="/auth", tags=["auth"])
+app.include_router(fastapi_users.get_reset_password_router(),
+                   prefix="/auth", tags=["auth"])
+app.include_router(fastapi_users.get_verify_router(
+    UserRead), prefix="/auth", tags=["auth"])
+app.include_router(fastapi_users.get_users_router(
+    UserRead, UserUpdate), prefix="/users", tags=["users"])
 
 
 @app.post("/upload")
 async def upload_file(
         file: UploadFile = File(...),
         caption: str = Form(...),
+        user: User = Depends(current_active_user),
         session: AsyncSession = Depends(get_async_session)
 ):
     MAX_IMAGE_SIZE = 2 * 1024 * 1024   # 2 MB
@@ -82,7 +87,7 @@ async def upload_file(
         url=upload_response.url,
         file_type=file_type,
         file_name=file_name_unique,
-        user_id= uuid.UUID("eae45e29-d1c3-4966-b752-b5756407715f")
+        user_id=user.id
     )
 
     session.add(post)
@@ -101,10 +106,14 @@ async def upload_file(
 
 @app.get("/feed")
 async def get_feed(
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
+        user: User = Depends(current_active_user)
 ):
-    result = await session.execute(select(Post).order_by(Post.created_at.desc()))
-    posts = [row[0] for row in result.all()]
+    result = await session.execute(
+        select(Post).options(selectinload(Post.user)
+                             ).order_by(Post.created_at.desc())
+    )
+    posts = result.scalars().all()
 
     posts_data = []
     for post in posts:
@@ -114,7 +123,10 @@ async def get_feed(
             "url": post.url,
             "file_type": post.file_type,
             "file_name": post.file_name,
-            "created_at": post.created_at.isoformat()
+            "created_at": post.created_at.isoformat(),
+            "user_id": str(post.user_id),
+            "is_owner": post.user_id == user.id,
+            "email": post.user.email if post.user else None
         }
         posts_data.append(post_data)
     return posts_data
@@ -123,7 +135,8 @@ async def get_feed(
 @app.delete("/posts/{id}")
 async def delete_post(
     id: str,
-    session: AsyncSession = Depends(get_async_session)
+    session: AsyncSession = Depends(get_async_session),
+    user: User = Depends(current_active_user)
 ):
     post_id = uuid.UUID(id)
     result = await session.execute(
@@ -134,8 +147,14 @@ async def delete_post(
 
     if post is None:
         raise HTTPException(
-            status_code=404,
+            status_code=403,
             detail="Post not found"
+        )
+
+    if post.user_id != user.id:
+        raise HTTPException(
+            status_code=404,
+            detail="You don't have permission to delete this post."
         )
 
     await session.delete(post)
